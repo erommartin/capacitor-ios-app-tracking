@@ -24,12 +24,23 @@ public class IOSAppTrackingPluginPlugin: CAPPlugin {
 
     @objc func requestPermission(_ call: CAPPluginCall) {
         if #available(iOS 14.0, *) {
-            ATTrackingManager.requestTrackingAuthorization { (res) in
-                let advertising = ASIdentifierManager.init().advertisingIdentifier.uuidString
-                let status = res
-                call.resolve([
-                    "value": advertising, "status": status.rawValue == 0 ? "unrequested" : status.rawValue == 1 ? "restricted" : status.rawValue == 2 ? "denied" : status.rawValue == 3 ? "authorized" : ""
-                ])
+            Task {
+                do {
+                    let status = await ATTrackingManager.requestTrackingAuthorization()
+                    if status == .denied, ATTrackingManager.trackingAuthorizationStatus == .notDetermined {
+                        debugPrint("iOS 17.4 ATT bug detected")
+                        for await _ in await NotificationCenter.default.notifications(named: UIApplication.didBecomeActiveNotification) {
+                            requestPermission(call)
+                        }
+                    } else {
+                        let advertising = ASIdentifierManager.init().advertisingIdentifier.uuidString
+                        call.resolve([
+                            "value": advertising, "status": status.rawValue == 0 ? "unrequested" : status.rawValue == 1 ? "restricted" : status.rawValue == 2 ? "denied" : status.rawValue == 3 ? "authorized" : ""
+                        ])
+                    }
+                } catch {
+                    print(error)
+                }
             }
         } 
         else {
